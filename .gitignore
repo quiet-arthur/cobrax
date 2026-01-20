@@ -1,0 +1,12 @@
+# Segurança (NUNCA remover esta linha)
+.env
+
+# Ambiente Virtual e Python
+.venv/
+__pycache__/
+*.pyc
+
+# Dados temporários 
+data/
+*.csv
+*.xlsx

@@ -1,0 +1,9 @@
+[project]
+name = "cobrax"
+version = "0.1.0"
+description = "Sistema para controle, acompanhamento e automação de cobranças de inadimplência condominial"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "python-dotenv>=1.2.1",
+]
