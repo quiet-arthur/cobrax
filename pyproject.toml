@@ -5,5 +5,6 @@ description = "Sistema para controle, acompanhamento e automação de cobranças
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "httpx>=0.28.1",
     "python-dotenv>=1.2.1",
 ]
