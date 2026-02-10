@@ -15,6 +15,7 @@ ADMS_CONFIG = {
     "alpha": {
         "url": "https://alphaassessoriams.almahcondos.com.br",
         "ids_ambiente": {
+            "id_empresa": 154,
             "id_usuario": 341,
             "id_estabelecimento": 1,
             "id_perfil_de_uso": 1,
@@ -26,6 +27,7 @@ ADMS_CONFIG = {
     "expresso": {
         "url": "https://expressoadmapp.almahcondos.com.br",
         "ids_ambiente": {
+            "id_empresa": 143,
             "id_usuario": 6,
             "id_estabelecimento": 1,
             "id_perfil_de_uso": 1,
