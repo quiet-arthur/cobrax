@@ -1,0 +1,57 @@
+# Phase 2 Database & Architecture Walkthrough
+
+## Summary of Changes
+We have completely refactored `cobrax` to prepare for sending notifications:
+1. **Clean Architecture**: The code is separated into `domain` (models), `adapters` (scraper), `repositories` (database), and `services` (business logic engine).
+2. **Database Integration**: We integrated **SQLAlchemy** with a local SQLite database (`cobrax.db`). 
+3. **Smart Synchronization**: Instead of just extracting data to memory, our data processor ([processor.py](file:///home/tako/cobrax/src/processor.py)) now upserts (creates or updates) the extracted records into the [Unit](file:///home/tako/cobrax/src/domain/models.py#5-18) and [Debt](file:///home/tako/cobrax/src/domain/models.py#19-31) tables tracking each owner's exact debt history.
+4. **Rules Engine**: We added `do_not_notify` flags on units and a mechanism to filter for debts exclusively older than a configured threshold (e.g., 90 days).
+
+## How to Test the Database Scraping
+1. Run the main processing loop to extract and save the data to the database:
+   ```bash
+   cd ~/cobrax
+   uv run python main.py
+   ```
+2. You will see logs indicating that the data is being synced. This command generates a local file named `cobrax.db`.
+
+## How to Visualize the Data
+Since the database is a standard SQLite file, you can easily view the data using several methods:
+
+### Option 1: Using VS Code (Recommended)
+1. Install an extension like **SQLite Viewer** or **SQLite** in VS Code.
+2. Click on the generated `cobrax.db` file in your explorer.
+3. The extension will open an interactive table view showing your [units](file:///home/tako/cobrax/src/adapters/almah_scraper.py#84-102) and [debts](file:///home/tako/notificaTu/src/services/non_paying_data_processing.py#14-33) tables.
+
+### Option 2: Using the Command Line
+If you have `sqlite3` installed, you can query directly from your bash terminal:
+```bash
+# Connect to the DB
+sqlite3 cobrax.db
+
+# View table schemas
+.schema
+
+# Query data
+SELECT owner_name, unit_name, cpf_cnpj, do_not_notify FROM units LIMIT 5;
+SELECT doc_number, due_date, amount, status FROM debts LIMIT 5;
+
+# Exit
+.exit
+```
+
+### Option 3: Quick Python Display Script
+If you want to quickly see what's pending notification right now (due > 90 days), you can create and run this snippet in your project directory:
+```python
+# view_data.py
+from src.repositories.database import SessionLocal
+from src.services.processor import get_pending_notifications
+
+db = SessionLocal()
+pending = get_pending_notifications(db, overdue_days=90)
+print(f"There are {len(pending)} debts ready for notification (>90 days overdue).")
+for debt in pending:
+    print(f"Debt: {debt.doc_number} | Due: {debt.due_date} | Amount: R${debt.amount} | Owner: {debt.unit.owner_name}")
+db.close()
+```
+Run it via: `uv run python view_data.py`

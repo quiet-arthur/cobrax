@@ -8,6 +8,9 @@ __pycache__/
 
 # Dados temporários 
 test.py
+test_db.py
+test_login.py
+cobrax.db
 data/
 *.csv
 *.xlsx
