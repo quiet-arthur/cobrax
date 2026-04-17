@@ -14,7 +14,7 @@ load_dotenv()
 class AlmahScraper:
     """
     Handles authentication and data extraction from the Almah Web System.
-    Validates data using Pydantic instead of blindly loading to Pandas/Polars.
+    Validates data using Pydantic.
     """
     def __init__(self, condom_id: str, adm: str):
         if adm not in ADMS_CONFIG:

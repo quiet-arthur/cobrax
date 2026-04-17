@@ -7,13 +7,8 @@ class DebtRecord(BaseModel):
     nome_pagador: str = Field(alias="Nome do Pagador")
     doc: str = Field(alias="Doc")
     vencimento: str = Field(alias="Venc")
-    valor_total: str = Field(alias="Vlr Total")
+    valor_total: Optional[str] = Field(None, alias="Vlr Total")  # não utilizado no fluxo
     status: str = Field(alias="Status")
-
-    @field_validator('valor_total')
-    def clean_currency(cls, v: str) -> str:
-        # Simple cleaner just to test validation running
-        return v.strip()
 
 class UnitRecord(BaseModel):
     unidade: str = Field(alias="Unidade")

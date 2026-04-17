@@ -1,3 +1,8 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # ====== ALMAH URLS ====== 
 
 ENDPOINTS = {
@@ -38,3 +43,13 @@ ADMS_CONFIG = {
 }
 
 # ======================
+
+# ====== EVOLUTION API ======
+
+EVOLUTION_CONFIG = {
+    "base_url": os.getenv("EVOLUTION_API_URL", "http://localhost:8080"),
+    "api_key":  os.getenv("EVOLUTION_API_KEY", ""),
+    "instance": os.getenv("EVOLUTION_INSTANCE", "wpp_ps"),
+}
+
+# ===========================

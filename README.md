@@ -7,17 +7,41 @@ Sistema de automação para cobrança de condomínio. Realiza o scraping de dado
 - **Scraping & API:** httpx + beautifulsoup4
 - **Validação de Dados:** Pydantic
 - **Banco de Dados:** SQLite + SQLAlchemy
-- **Notificação:** Meta WhatsApp Cloud API (Planejado na Fase 3)
+- **Notificação:** Whatsapp - Evolution API 
 
-## 🏗 Arquitetura (Clean Architecture)
-- `src/domain`: Modelos SQLAlchemy e Schemas Pydantic.
-- `src/adapters`: Integração com API externa (Almah).
-- `src/services`: Processador de regras de negócio (Threshold de 90 dias, tags de não notificar).
-- `src/repositories`: Conexão unificada com o banco SQLite.
+## 🏗 Estrutura do Projeto (Clean Architecture)
+O sistema opera segmentando domínios limpos sem atrito de infraestrutura (`src/`):
+- `src/domain/`: Regras e Models (Pydantic / SQLAlchemy).
+- `src/adapters/`: Interfaces (Almah APIs, Requisições).
+- `src/services/`: Orquestradores das regras de negócio.
+- `src/repositories/`: Classes de banco de dados e consultas.
+- `tests/`: Suíte automatizada sob paradigma `pytest`.
+- `scripts/`: Utilitários isolados (ex: `migrate_db.py`).
+- `data/`: Persistência local ignorada no repositório (`cobrax.db`).
 
-## 🚀 Como rodar
+## 🚀 Como Rodar e Testar
 
-1. **Instalar dependências:**
+1. **Instalar dependências (Padrão e Dev):**
    Certifique-se de ter o `uv` instalado.
    ```bash
    uv sync
+   ```
+
+2. **Executar a Aplicação:**
+   Para simular o disparo de notificações de dívidas (sem enviar nada para os números reais), use:
+   ```bash
+   uv run python -m src.main --dry-run
+   ```
+   Para enviar as notificações de dívidas (requer confirmação explícita), use:
+   ```bash
+   uv run python -m src.main --notify
+   ```
+   Para escolher especificamente qual condomínio você quer atualizar a base interativamente e enviar notificações, use as flags combinadas:
+   ```bash
+   uv run python -m src.main --interactive --notify
+   ```
+
+3. **Executar Testes de Regressão e Cobertura:**
+   ```bash
+   uv run pytest tests/ --cov=src --cov-report=term-missing
+   ```
