@@ -12,6 +12,7 @@ class DebtRecord(BaseModel):
 
 class UnitRecord(BaseModel):
     unidade: str = Field(alias="Unidade")
+    bloco: Optional[str] = None
     cpf_cnpj: str = Field(alias="ProprietarioCpfCnpj")
     nome: str = Field(alias="ProprietarioNome")
     telefone1: Optional[str] = Field(None, alias="ProprietarioTelefone1")

@@ -11,5 +11,16 @@
   { "id": "68", "name": "VILLAGIO BANDEIRA 2", "adm": "alpha" },
   { "id": "89", "name": "VILLAGIO BANDEIRA 3", "adm": "alpha" },
   { "id": "789", "name": "VILLAS DE CASTILLA I", "adm": "alpha" },
-  { "id": "164", "name": "RESIDENCIAL RITA VIEIRA PARQUE", "adm": "alpha" }
+  { "id": "164", "name": "RESIDENCIAL RITA VIEIRA PARQUE", "adm": "alpha" },
+  { "id": "4285", "name": "EDIFICIO LAS PALMAS", "adm": "expresso" },
+  { "id": "5304", "name": "EDIFICIO PORTAL DAS FLORES", "adm": "expresso" },
+  { "id": "5954", "name": "FIGUEIRA III", "adm": "expresso" },
+  { "id": "97", "name": "PARQUE RESIDENCIAL PANAMA A", "adm": "expresso" },
+  { "id": "92", "name": "CONDOMINIO RESIDENCIAL CASAGRANDE", "adm": "expresso" },
+  { "id": "4409", "name": "CONDOMINIO RESIDENCIAL ITATIBA", "adm": "expresso" },
+  { "id": "94", "name": "CONDOMINIO RESIDENCIAL JARDINS DO APORE", "adm": "expresso" },
+  { "id": "91", "name": "CONDOMINIO VILLAGIO BANDEIRA", "adm": "expresso" },
+  { "id": "2470", "name": "EDIFICIO SOLAR DOS IPES", "adm": "expresso" },
+  { "id": "87", "name": "RESIDENCIAL ALBUQUERQUE II", "adm": "expresso" },
+  { "id": "88", "name": "RESIDENCIAL DAS AMOREIRAS", "adm": "expresso" }
 ]

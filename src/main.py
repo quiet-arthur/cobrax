@@ -1,14 +1,38 @@
+"""
+main.py — Ponto de entrada do sistema Cobrax.
+
+Fluxo principal:
+  1. Carrega configuração de condomínios (condominios.json)
+  2. Agrupa condomínios por administradora (ADM)
+  3. Para cada ADM, abre UMA sessão autenticada e processa todos os condos do lote
+  4. Opcionalmente executa notificações (--dry-run ou --notify)
+
+Flags:
+  --interactive  : Escolhe condomínio(s) interativamente
+  --condo <id>   : Filtra sincronização E notificações para um condomínio
+  --dry-run      : Simula notificações (sem envio real)
+  --notify       : Envia notificações de verdade
+  (sem flags)    : Sincroniza dados apenas, sem notificações
+"""
+
 import json
 import logging
 import sys
-from src.adapters.almah_scraper import AlmahScraper
-from src.adapters.evolution_client import EvolutionAPIClient
-from src.repositories.database import engine, Base, SessionLocal
-from src.services.processor import sync_data
-from src.services.notifier import NotificationService
-from src.config.settings import EVOLUTION_CONFIG
+from itertools import groupby
+from operator import itemgetter
 
-def load_condominios(filepath="src/config/condominios.json"):
+from sqlalchemy.orm import Session
+
+from src.adapters.almah_scraper import AlmahSession
+from src.adapters.evolution_client import EvolutionAPIClient
+from src.config.settings import EVOLUTION_CONFIG
+from src.repositories.database import Base, SessionLocal, engine
+from src.services.notifier import NotificationService
+from src.services.processor import sync_data
+
+
+def load_condominios(filepath: str = "src/config/condominios.json") -> list[dict]:
+    """Carrega a lista de condomínios do arquivo JSON de configuração."""
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -16,38 +40,82 @@ def load_condominios(filepath="src/config/condominios.json"):
         logging.error(f"Failed to load {filepath}: {e}")
         return []
 
-def process_condominio(condom, db):
-    condom_id = condom["id"]
-    condom_name = condom["name"]
-    adm = condom.get("adm", "alpha")
-    
-    logging.info(f"--- Processando Condomínio: {condom_name} ({condom_id}) ---")
-    
-    with AlmahScraper(condom_id, adm) as scraper:
-        if not scraper.login_and_set_cookies():
-            logging.error(f"Falha na autenticação para {condom_name}")
+
+def group_by_adm(condos: list[dict]) -> dict[str, list[dict]]:
+    """
+    Agrupa condomínios pelo campo 'adm'.
+
+    Args:
+        condos: Lista de dicts com ao menos as chaves 'id', 'name', 'adm'.
+
+    Returns:
+        Dict mapeando cada ADM à sua lista de condomínios.
+        Exemplo: {"alpha": [...], "expresso": [...]}
+    """
+    sorted_condos = sorted(condos, key=itemgetter("adm"))
+    return {
+        adm: list(group)
+        for adm, group in groupby(sorted_condos, key=itemgetter("adm"))
+    }
+
+
+def process_adm_batch(adm: str, condos: list[dict], db: Session) -> None:
+    """
+    Processa todos os condomínios de uma administradora com sessão compartilhada.
+
+    Login: 1 vez por ADM. Troca de contexto: N vezes (1 por condomínio).
+    Falha em um condomínio individual não interrompe os demais.
+
+    Args:
+        adm:    Chave da administradora ("alpha" ou "expresso").
+        condos: Lista de condomínios a processar neste lote.
+        db:     Sessão SQLAlchemy ativa.
+    """
+    logging.info(f"=== Iniciando lote da ADM '{adm}' ({len(condos)} condomínio(s)) ===")
+
+    with AlmahSession(adm) as session:
+        if not session.login():
+            logging.error(f"Falha na autenticação da ADM '{adm}'. Pulando lote inteiro.")
             return
-        
-        units = scraper.get_units()
-        logging.info(f"[{condom_name}] Unidades encontradas: {len(units)}")
-        
-        bills = scraper.get_bills()
-        logging.info(f"[{condom_name}] Boletos encontrados: {len(bills)}")
-        
-        if units or bills:
-            sync_data(condom_id, units, bills, db)
+
+        for condom in condos:
+            condom_id: str = str(condom["id"])
+            condom_name: str = condom["name"]
+            logging.info(f"--- Processando: {condom_name} ({condom_id}) ---")
+
+            if not session.switch_condominio(condom_id):
+                logging.error(f"Falha ao trocar contexto para {condom_name}. Pulando.")
+                continue
+
+            units = session.get_units(condom_id)
+            logging.info(f"[{condom_name}] Unidades encontradas: {len(units)}")
+
+            bills = session.get_bills(condom_id)
+            logging.info(f"[{condom_name}] Boletos encontrados: {len(bills)}")
+
+            if units or bills:
+                sync_data(condom_id, adm, units, bills, db)
+
+    logging.info(f"=== Lote da ADM '{adm}' finalizado ===")
 
 
-def run_notifications(db, dry_run: bool = False, condominium_id: str | None = None):
+def run_notifications(
+    db: Session,
+    dry_run: bool = False,
+    condominium_ids: list[str] | None = None,
+) -> None:
     """
     Executa o fluxo de notificação via Evolution API (WhatsApp).
 
     Args:
-        dry_run:        Se True, apenas loga as mensagens sem enviá-las de fato.
-        condominium_id: Se fornecido, notifica apenas as unidades deste condomínio.
+        db:               Sessão SQLAlchemy ativa.
+        dry_run:          Se True, apenas loga as mensagens sem enviá-las de fato.
+        condominium_ids:  Se fornecido (lista não vazia), notifica apenas as
+                          unidades dos condomínios listados. Se None, notifica
+                          todos os condomínios.
     """
     mode = "DRY-RUN" if dry_run else "REAL"
-    scope = f"condomínio {condominium_id}" if condominium_id else "todos os condomínios"
+    scope = f"condomínios {condominium_ids}" if condominium_ids else "todos os condomínios"
     logging.info(f"=== Notificações [{mode}] | Escopo: {scope} ===")
     with EvolutionAPIClient(
         base_url=EVOLUTION_CONFIG["base_url"],
@@ -55,15 +123,17 @@ def run_notifications(db, dry_run: bool = False, condominium_id: str | None = No
         instance=EVOLUTION_CONFIG["instance"],
     ) as client:
         service = NotificationService(client, db, dry_run=dry_run)
-        stats = service.run(condominium_id=condominium_id)
+        stats = service.run(condominium_ids=condominium_ids)
     logging.info(f"=== Notificações encerradas | Resultado: {stats} ===")
 
-def main():
+
+def main() -> None:
+    """Ponto de entrada principal do Cobrax."""
     # Init DB
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    
+
     condos = load_condominios()
     if not condos:
         logging.warning("Nenhum condomínio configurado em condominios.json.")
@@ -127,15 +197,28 @@ def main():
     else:
         selected = condos
 
-    logging.info(f"Iniciando processamento de {len(selected)} condomínio(s)...")
-    for c in selected:
-        process_condominio(c, db)
+    # ── Processamento por ADM (sessão compartilhada) ───────────────────────────
+    adm_groups = group_by_adm(selected)
+    total_condos = sum(len(batch) for batch in adm_groups.values())
+    logging.info(
+        f"Iniciando processamento de {total_condos} condomínio(s) "
+        f"em {len(adm_groups)} administradora(s)..."
+    )
+    for adm, batch in adm_groups.items():
+        process_adm_batch(adm, batch, db)
 
-    # ── Notificações ───────────────────────────────────────────────────────────
+    # ── Notificações ─────────────────────────────────────────────────────────────────────
+    # Deriva lista de IDs selecionados para restringir o escopo das notificações.
+    # Se todos os condomínios foram selecionados, passa None (sem filtro).
+    all_selected = len(selected) == len(condos)
+    notify_ids: list[str] | None = (
+        None if all_selected else [str(c["id"]) for c in selected]
+    )
+
     if dry_run:
-        run_notifications(db, dry_run=True, condominium_id=condo_filter)
+        run_notifications(db, dry_run=True, condominium_ids=notify_ids)
     elif do_notify:
-        run_notifications(db, dry_run=False, condominium_id=condo_filter)
+        run_notifications(db, dry_run=False, condominium_ids=notify_ids)
     else:
         logging.info(
             "Notificações não executadas. Use --dry-run (simulação) ou --notify (envio real)."

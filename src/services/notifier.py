@@ -152,14 +152,15 @@ class NotificationService:
         self,
         overdue_days: int = OVERDUE_DAYS,
         cooldown_days: int = COOLDOWN_DAYS,
-        condominium_id: str | None = None,
+        condominium_ids: list[str] | None = None,
     ) -> dict:
         """
         Executa o lote completo de notificações.
 
         Args:
-            condominium_id: Se fornecido, processa apenas as unidades deste
-                            condomínio. Se None, processa todos os condomínios.
+            condominium_ids: Se fornecido (lista não vazia), processa apenas as
+                             unidades dos condomínios listados. Se None ou lista
+                             vazia, processa todos os condomínios.
 
         Returns:
             dict com chaves: sent, skipped, errors, total
@@ -173,12 +174,12 @@ class NotificationService:
             )
             return stats
 
-        # Busca unidades elegíveis (escopo: todos os condomínios ou apenas um)
-        scope_label = f"condomínio {condominium_id}" if condominium_id else "todos os condomínios"
+        # Busca unidades elegíveis (escopo: condomínios selecionados ou todos)
+        scope_label = f"condomínios {condominium_ids}" if condominium_ids else "todos os condomínios"
         logger.info(f"Escopo da notificação: {scope_label}")
 
         units: list[Unit] = get_units_pending_notification(
-            self.db, overdue_days, cooldown_days, condominium_id=condominium_id
+            self.db, overdue_days, cooldown_days, condominium_ids=condominium_ids
         )
         stats["total"] = len(units)
         logger.info(f"Unidades elegíveis para notificação: {len(units)}")

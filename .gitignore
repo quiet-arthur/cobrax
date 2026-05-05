@@ -10,6 +10,7 @@ __pycache__/
 test.py
 test_db.py
 test_login.py
+scripts/*.py
 cobrax.db
 data/
 *.csv

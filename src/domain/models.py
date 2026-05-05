@@ -7,6 +7,7 @@ class Unit(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     condominium_id = Column(String, index=True, nullable=False)
+    adm = Column(String, nullable=False, default="alpha")  # "alpha" | "expresso"
     unit_name = Column(String, nullable=False)
     owner_name = Column(String, index=True)
     cpf_cnpj = Column(String)
