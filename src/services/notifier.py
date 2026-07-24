@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 # ── Constantes de negócio ──────────────────────────────────────────────────────
 
 OVERDUE_DAYS: int = 90       # Débito deve ter ≥ 90 dias de atraso para qualificar
-COOLDOWN_DAYS: int = 15      # Intervalo mínimo entre notificações para a mesma unidade
+COOLDOWN_DAYS: int = 30      # Intervalo mínimo entre notificações para a mesma unidade
 MSG_DELAY_MS: int = 1500     # Delay de "digitação" simulado na API
 RATE_LIMIT_SLEEP: float = 3  # Segundos de espera entre envios consecutivos
 
