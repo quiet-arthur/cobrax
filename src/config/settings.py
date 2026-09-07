@@ -6,7 +6,7 @@ load_dotenv()
 # ====== ALMAH URLS ====== 
 
 ENDPOINTS = {
-    "login": "/SIS/EmpresaWS.asmx/SelecionarPorLoginSenha",
+    "login": "/index.aspx",
     "access": "/novo_acesso.aspx",
     "units_export": "/CND/UnidadeCondominioWS.asmx/Exportar",
     "units_datatable": "/CND/CND00701.aspx?jqDados=S&draw=1&start=0&length=5000&search=&order=",
@@ -27,7 +27,7 @@ ADMS_CONFIG = {
             "id_perfil_de_uso": 1,
         },
         "user_login": "LOGIN_USER",
-        "user_password": "ALPHA_PASSWORD_HASH"
+        "user_password": "ALPHA_PASSWORD"
     },
 
     "expresso": {
@@ -39,7 +39,7 @@ ADMS_CONFIG = {
             "id_perfil_de_uso": 1,
         },
         "user_login": "LOGIN_USER",
-        "user_password": "EXPRESSO_PASSWORD_HASH"
+        "user_password": "EXPRESSO_PASSWORD"
     }
 }
 

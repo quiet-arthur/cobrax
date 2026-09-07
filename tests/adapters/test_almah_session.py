@@ -86,6 +86,7 @@ class TestLogin:
         """Login bem-sucedido deve setar _is_authenticated = True."""
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"CodigoAcesso": "1", "Url": "estabelecimento.aspx"}
         session._session.post = MagicMock(return_value=mock_response)
 
         result = session.login()
@@ -93,6 +94,18 @@ class TestLogin:
         assert result is True
         assert session._is_authenticated is True
         session._session.post.assert_called_once()
+
+    def test_login_invalid_credentials(self, session):
+        """Login com credenciais inválidas retorna JSON sem 'Url' e deve retornar False."""
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"CodigoAcesso": None, "Url": None}
+        session._session.post = MagicMock(return_value=mock_response)
+
+        result = session.login()
+
+        assert result is False
+        assert session._is_authenticated is False
 
     def test_login_http_error(self, session):
         """Erro HTTP no login deve retornar False."""
@@ -528,6 +541,10 @@ class TestReauth:
         mock_success_response.raise_for_status = MagicMock()
         mock_success_response.json.return_value = {"d": SAMPLE_UNITS_HTML}
 
+        mock_login_response = MagicMock()
+        mock_login_response.raise_for_status = MagicMock()
+        mock_login_response.json.return_value = {"CodigoAcesso": "1", "Url": "estabelecimento.aspx"}
+
         # Primeira chamada: 401, segunda (após reauth): sucesso
         authenticated_session._session.post = MagicMock(
             side_effect=[
@@ -536,7 +553,7 @@ class TestReauth:
                     request=MagicMock(),
                     response=mock_401_response,
                 ),
-                MagicMock(),  # login post
+                mock_login_response,  # login post
                 mock_success_response,  # get_units retry
             ]
         )

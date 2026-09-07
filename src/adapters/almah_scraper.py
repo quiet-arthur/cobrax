@@ -69,7 +69,18 @@ class AlmahSession:
 
         self._current_condom_id: str | None = None
         self._is_authenticated: bool = False
-        self._session: httpx.Client = httpx.Client(timeout=30.0)
+        self._session: httpx.Client = httpx.Client(
+            timeout=30.0,
+            headers={
+                # Sem um User-Agent de navegador o WAF da Almah bloqueia com 403.
+                "User-Agent": (
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+                ),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "pt-BR,pt;q=0.9",
+            },
+        )
 
     def __enter__(self) -> "AlmahSession":
         return self
@@ -85,17 +96,42 @@ class AlmahSession:
 
     def login(self) -> bool:
         """
-        Autentica na administradora. Deve ser chamado UMA vez por sessão.
+        Autentica na administradora via o formulário web (POST /index.aspx),
+        o mesmo fluxo usado pelo navegador. Deve ser chamado UMA vez por sessão.
+
+        O endpoint não faz um redirect HTTP: em caso de sucesso, responde com um
+        JSON `{"CodigoAcesso": "...", "Url": "estabelecimento.aspx"}` que o
+        JavaScript da página usa para navegar; a navegação real é feita
+        client-side, então validamos o sucesso pelo campo "Url" do JSON.
 
         Returns:
             True se o login foi bem-sucedido, False caso contrário.
         """
         try:
+            # GET inicial: obtém o cookie de sessão (ASP.NET_SessionId) exigido
+            # pelo POST de login; sem ele o WAF responde 403.
+            self._session.get(self.config["url"] + self.endpoints["login"])
+
             resp = self._session.post(
                 self.config["url"] + self.endpoints["login"],
-                json={"login": self.user, "senhaCriptografada": self.password},
+                data={
+                    "f_login": self.user,
+                    "f_senha": self.password,
+                    "f_pw": self.password,
+                    "f_gravar": "S",
+                },
+                headers={"Referer": self.config["url"] + self.endpoints["login"]},
             )
             resp.raise_for_status()
+
+            try:
+                payload = resp.json()
+            except ValueError:
+                payload = {}
+
+            if not payload.get("Url"):
+                logger.error(f"[{self.adm}] Falha na autenticação: credenciais inválidas.")
+                return False
 
             self._is_authenticated = True
             logger.info(f"[{self.adm}] Autenticação bem-sucedida.")
@@ -258,6 +294,12 @@ class AlmahSession:
         try:
             resp = self._session.get(
                 self.config["url"] + self.endpoints["units_datatable"],
+                # Sem estes headers o endpoint trata a chamada como navegação de
+                # página (não XHR) e responde com um 302 para estabelecimento.aspx.
+                headers={
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Accept": "application/json, text/javascript, */*; q=0.01",
+                },
             )
             resp.raise_for_status()
             payload = resp.json()

@@ -110,13 +110,22 @@ def sync_data(condominium_id: str, adm: str, units_list: list[UnitRecord], bills
             unit = Unit(
                 condominium_id=condominium_id,
                 adm=adm,
-                unit_name=d_rec.unidade,
+                unit_name=d_rec.unidade.strip(),
                 owner_name=d_rec.nome_pagador,
                 do_not_notify=False
             )
             db.add(unit)
             db.commit()
             db.refresh(unit)
+        else:
+            # A Almah nem sempre expõe o bloco no feed de unidades (Exportar), mas o
+            # feed de dívidas embute bloco/torre direto na string (ex: "B 03",
+            # "BLOCO 1 03"). Só adota esse valor quando o nome atual ainda é um
+            # número puro (sem bloco) — nunca sobrescreve um nome já formatado.
+            d_unidade = d_rec.unidade.strip()
+            if d_unidade and not d_unidade.isdigit() and unit.unit_name.isdigit():
+                unit.unit_name = d_unidade
+                db.commit()
 
         debt = db.query(Debt).filter(Debt.doc_number == d_rec.doc).first()
         if not debt:

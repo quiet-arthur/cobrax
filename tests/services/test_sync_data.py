@@ -221,6 +221,53 @@ class TestSyncDataWithBlock:
         assert debt is not None
         assert debt.doc_number == "DOC-001"
 
+    def test_debt_backfills_block_when_unit_name_is_bare_number(self, db: Session) -> None:
+        """
+        Regressão: condomínios multi-bloco onde o feed de unidades (Exportar) não
+        expõe o bloco (CND00701 indisponível) ficavam com unit_name = "03" (bloco
+        ambíguo). O feed de dívidas já traz "B 03" pronto — deve ser adotado
+        quando o nome atual ainda é um número puro.
+        """
+        units = [_make_unit_record(unidade="03", bloco=None, nome="Katicilani")]
+        sync_data("87", "expresso", units, [], db)
+
+        unit = db.query(Unit).first()
+        assert unit.unit_name == "03"
+
+        debts = [_make_debt_record(unidade="B 03", nome_pagador="Katicilani")]
+        sync_data("87", "expresso", [], debts, db)
+
+        db.refresh(unit)
+        assert unit.unit_name == "B 03"
+
+    def test_debt_does_not_downgrade_already_formatted_name(self, db: Session) -> None:
+        """
+        Se o nome já foi formatado (via bloco do units-sync, ou já veio embutido
+        do Exportar, ex: "A - 001"), o sync de dívidas não deve trocá-lo pela
+        string mais crua do boleto (ex: "A 01").
+        """
+        units = [_make_unit_record(unidade="01", bloco="A", nome="João Silva")]
+        sync_data("87", "expresso", units, [], db)
+        unit = db.query(Unit).first()
+        assert unit.unit_name == "Bloco A - 01"
+
+        debts = [_make_debt_record(unidade="A 01", nome_pagador="João Silva")]
+        sync_data("87", "expresso", [], debts, db)
+
+        db.refresh(unit)
+        assert unit.unit_name == "Bloco A - 01"
+
+    def test_debt_leaves_single_block_condo_untouched(self, db: Session) -> None:
+        """Condomínio sem blocos: dívida também traz número puro, nada muda."""
+        units = [_make_unit_record(unidade="03", bloco=None, nome="Bob")]
+        sync_data("205", "alpha", units, [], db)
+
+        debts = [_make_debt_record(unidade="03", nome_pagador="Bob")]
+        sync_data("205", "alpha", [], debts, db)
+
+        unit = db.query(Unit).first()
+        assert unit.unit_name == "03"
+
     def test_unit_with_embedded_block_no_duplication(self, db: Session) -> None:
         """
         Regressão condomínio 164: unidade já vem como 'A - 101' e bloco='A'.
