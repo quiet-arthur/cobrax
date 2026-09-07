@@ -54,10 +54,18 @@ def _format_unit_name(unidade: str, bloco: str | None) -> str:
     return f"Bloco {bloco_stripped} - {unidade_stripped}"
 
 def sync_data(condominium_id: str, adm: str, units_list: list[UnitRecord], bills_list: list[DebtRecord], db: Session) -> None:
-    logging.info(f"Syncing {len(units_list)} units and {len(bills_list)} bills to database (adm={adm}).")
-    
+    # Cobrax só precisa de dados cadastrais (telefone/e-mail/CPF) de quem está
+    # inadimplente — não há motivo para persistir a unidade inteira do condomínio
+    # (a maioria em dia) só porque veio no Exportar. Adimplentes ficam de fora.
+    debtor_names = {d.nome_pagador for d in bills_list}
+    units_to_sync = [u for u in units_list if u.nome in debtor_names]
+    logging.info(
+        f"Syncing {len(units_to_sync)}/{len(units_list)} units (com dívida) "
+        f"and {len(bills_list)} bills to database (adm={adm})."
+    )
+
     # 1. Sync Units
-    for u_rec in units_list:
+    for u_rec in units_to_sync:
         # Formata o nome visual da unidade com bloco (quando disponível).
         # Cobre variações reais da API:
         #   - unidade="01",      bloco="A"  → "Bloco A - 01"

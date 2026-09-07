@@ -9,7 +9,6 @@ ENDPOINTS = {
     "login": "/index.aspx",
     "access": "/novo_acesso.aspx",
     "units_export": "/CND/UnidadeCondominioWS.asmx/Exportar",
-    "units_datatable": "/CND/CND00701.aspx?jqDados=S&draw=1&start=0&length=5000&search=&order=",
     "units_bils_export": "/FIN/ContasAReceberWS.asmx/GerarRelatorioInadimplenciaCondominioXLS",
 }
 

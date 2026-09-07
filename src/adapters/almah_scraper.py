@@ -60,7 +60,6 @@ class AlmahSession:
             "login": ENDPOINTS["login"],
             "access": ENDPOINTS["access"],
             "units": ENDPOINTS["units_export"],
-            "units_datatable": ENDPOINTS["units_datatable"],
             "bills": ENDPOINTS["units_bils_export"],
         }
 
@@ -190,21 +189,20 @@ class AlmahSession:
 
     def get_units(self, condom_id: str) -> list[UnitRecord]:
         """
-        Busca a lista de unidades do condomínio informado.
+        Busca a lista de unidades do condomínio informado (endpoint Exportar):
+        dados de contato completos (CPF, telefones, e-mails).
 
-        Consolida dados de duas fontes:
-          1. Endpoint Exportar (HTML) → dados de contato completos (CPF, telefones, e-mails).
-          2. Endpoint DataTable (JSON) → mapeamento Unidade → Bloco.
-
-        O cruzamento é feito em memória pela chave composta (nome + unidade),
-        garantindo que o campo `bloco` do UnitRecord seja preenchido antes
-        de retornar ao chamador.
+        O campo `bloco` do UnitRecord não é preenchido aqui — a Almah não expõe
+        a letra do bloco nesse endpoint (só um `CodigoBloco` numérico interno).
+        Quem preenche `bloco`, quando possível, é `sync_data`, a partir da
+        própria string de unidade do feed de dívidas (que já vem com o bloco
+        embutido, ex: "B 03").
 
         Args:
             condom_id: ID do condomínio (deve coincidir com o contexto ativo).
 
         Returns:
-            Lista de UnitRecord validados pelo Pydantic, com campo `bloco` enriquecido.
+            Lista de UnitRecord validados pelo Pydantic.
         """
         try:
             resp = self._session.post(
@@ -215,7 +213,7 @@ class AlmahSession:
             html = resp.json().get("d", "")
             if not html:
                 return []
-            records = self._parse_html(html, UnitRecord)
+            return self._parse_html(html, UnitRecord)
         except httpx.HTTPStatusError as e:
             if e.response.status_code in (401, 403) and self._try_reauth(condom_id):
                 return self.get_units(condom_id)
@@ -224,14 +222,6 @@ class AlmahSession:
         except Exception as e:
             logger.error(f"[{self.adm}] Erro ao buscar unidades: {e}")
             return []
-
-        # Enriquecimento: cruzar com datatable de blocos
-        blocks_map = self._get_blocks_mapping()
-        for record in records:
-            key = f"{record.nome}_{record.unidade}"
-            record.bloco = blocks_map.get(key)
-
-        return records
 
     def get_bills(self, condom_id: str) -> list[DebtRecord]:
         """
@@ -271,72 +261,6 @@ class AlmahSession:
             return []
 
     # ── Métodos Internos ───────────────────────────────────────────────────────
-
-    def _get_blocks_mapping(self) -> dict[str, str]:
-        """
-        Consulta o DataTable de unidades (CND00701) para obter o mapeamento
-        de cada unidade ao seu bloco correspondente.
-
-        A resposta JSON contém um array "data" onde cada item possui:
-          - "1": número da unidade (ex: "01" ou "A - 001")
-          - "2": identificador do bloco (ex: "A" ou "BLOCO A")
-          - "3": nome do proprietário (ex: "JOÃO SILVA")
-
-        Normalização aplicada:
-          - Bloco: remove prefixo "BLOCO " se presente (ex: "BLOCO A" → "A").
-          - Unidade: usa o valor original como chave (sem remover prefixo),
-            pois precisa bater exatamente com o UnitRecord que veio do Exportar.
-
-        Returns:
-            Dict com chave "NOME_UNIDADE" e valor sendo a letra do bloco
-            já normalizada. Dict vazio em caso de falha (graceful degradation).
-        """
-        try:
-            resp = self._session.get(
-                self.config["url"] + self.endpoints["units_datatable"],
-                # Sem estes headers o endpoint trata a chamada como navegação de
-                # página (não XHR) e responde com um 302 para estabelecimento.aspx.
-                headers={
-                    "X-Requested-With": "XMLHttpRequest",
-                    "Accept": "application/json, text/javascript, */*; q=0.01",
-                },
-            )
-            resp.raise_for_status()
-            payload = resp.json()
-
-            # O endpoint pode retornar {"d": {"data": [...]}} ou {"data": [...]}
-            data_container = payload.get("d", payload)
-            rows: list[dict] = data_container.get("data", [])
-
-            mapping: dict[str, str] = {}
-            for row in rows:
-                unit_number: str = row.get("1", "").strip()
-                block_raw: str = row.get("2", "").strip()
-                owner_name: str = row.get("3", "").strip()
-
-                # Normaliza: "BLOCO A" → "A", "BLOCO B" → "B", "A" → "A"
-                block_letter: str = (
-                    block_raw.removeprefix("BLOCO").strip()
-                    if block_raw.upper().startswith("BLOCO")
-                    else block_raw
-                )
-
-                if unit_number and owner_name:
-                    key = f"{owner_name}_{unit_number}"
-                    mapping[key] = block_letter
-
-            logger.info(
-                f"[{self.adm}] Mapeamento de blocos carregado: "
-                f"{len(mapping)} unidades mapeadas."
-            )
-            return mapping
-
-        except Exception as e:
-            logger.warning(
-                f"[{self.adm}] Falha ao buscar mapeamento de blocos "
-                f"(graceful degradation): {e}"
-            )
-            return {}
 
     def _try_reauth(self, condom_id: str) -> bool:
         """

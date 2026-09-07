@@ -3,6 +3,7 @@ test_sync_data.py — Testes unitários para sync_data e _format_unit_name.
 
 Valida:
   - _format_unit_name: normalização do nome da unidade com/sem bloco
+  - sync_data só persiste units com pelo menos 1 dívida (adimplentes ficam de fora)
   - Unit criada com bloco → unit_name = "Bloco X - NN"
   - Unit criada sem bloco → unit_name = "NN" (sem prefixo)
   - Unit com bloco embutido na unidade → sem duplicação (ex: "A - 001")
@@ -125,39 +126,80 @@ class TestFormatUnitName:
 # ── Testes de sync_data (integração com DB) ───────────────────────────────────
 
 
+class TestSyncDataDebtorFiltering:
+    """
+    Testes do filtro de adimplentes: sync_data só deve persistir uma Unit
+    vinda do feed de unidades (Exportar) se o dono tiver ao menos 1 dívida
+    no mesmo ciclo. Adimplentes não geram linha na tabela units.
+    """
+
+    def test_unit_without_debt_is_not_synced(self, db: Session) -> None:
+        """Unit sem nenhuma dívida no mesmo ciclo não deve ser persistida."""
+        units = [_make_unit_record(nome="Adimplente")]
+        sync_data("87", "expresso", units, [], db)
+
+        assert db.query(Unit).count() == 0
+
+    def test_unit_with_matching_debt_is_synced(self, db: Session) -> None:
+        """Unit cujo dono aparece no feed de dívidas deve ser persistida."""
+        units = [_make_unit_record(nome="Devedor")]
+        debts = [_make_debt_record(nome_pagador="Devedor")]
+        sync_data("87", "expresso", units, debts, db)
+
+        unit = db.query(Unit).first()
+        assert unit is not None
+        assert unit.owner_name == "Devedor"
+
+    def test_only_debtors_synced_among_mixed_units(self, db: Session) -> None:
+        """De uma leva de unidades, só as que têm dívida geram registro."""
+        units = [
+            _make_unit_record(nome="Devedor", cpf_cnpj="11111111111"),
+            _make_unit_record(nome="Adimplente", cpf_cnpj="22222222222"),
+        ]
+        debts = [_make_debt_record(nome_pagador="Devedor")]
+        sync_data("87", "expresso", units, debts, db)
+
+        owners = {u.owner_name for u in db.query(Unit).all()}
+        assert owners == {"Devedor"}
+
+
 class TestSyncDataWithBlock:
     """Testes do sync_data para formatação de unit_name com bloco."""
 
     def test_new_unit_with_block_formats_name(self, db: Session) -> None:
         """Unit nova com bloco deve salvar como 'Bloco A - 01'."""
         units = [_make_unit_record(unidade="01", bloco="A", nome="Alice")]
-        sync_data("87", "expresso", units, [], db)
+        debts = [_make_debt_record(unidade="A 01", nome_pagador="Alice")]
+        sync_data("87", "expresso", units, debts, db)
 
-        unit = db.query(Unit).first()
+        unit = db.query(Unit).filter(Unit.owner_name == "Alice").first()
         assert unit is not None
         assert unit.unit_name == "Bloco A - 01"
 
     def test_new_unit_without_block_saves_raw(self, db: Session) -> None:
         """Unit nova sem bloco deve salvar apenas o numeral (ex: '01')."""
         units = [_make_unit_record(unidade="01", bloco=None, nome="Bob")]
-        sync_data("205", "alpha", units, [], db)
+        debts = [_make_debt_record(unidade="01", nome_pagador="Bob")]
+        sync_data("205", "alpha", units, debts, db)
 
-        unit = db.query(Unit).first()
+        unit = db.query(Unit).filter(Unit.owner_name == "Bob").first()
         assert unit is not None
         assert unit.unit_name == "01"
 
     def test_update_unit_with_block_formats_name(self, db: Session) -> None:
         """Unit existente atualizada com bloco deve ter o nome re-formatado."""
+        debts = [_make_debt_record(unidade="03", nome_pagador="Carol")]
+
         # Primeiro sync sem bloco
         units_v1 = [_make_unit_record(unidade="03", bloco=None, nome="Carol")]
-        sync_data("87", "expresso", units_v1, [], db)
+        sync_data("87", "expresso", units_v1, debts, db)
 
-        unit = db.query(Unit).first()
+        unit = db.query(Unit).filter(Unit.owner_name == "Carol").first()
         assert unit.unit_name == "03"
 
         # Segundo sync com bloco (simulando que agora o datatable retornou o bloco)
         units_v2 = [_make_unit_record(unidade="03", bloco="B", nome="Carol")]
-        sync_data("87", "expresso", units_v2, [], db)
+        sync_data("87", "expresso", units_v2, debts, db)
 
         db.refresh(unit)
         assert unit.unit_name == "Bloco B - 03"
@@ -169,7 +211,12 @@ class TestSyncDataWithBlock:
             _make_unit_record(unidade="01", bloco="B", nome="Bob", cpf_cnpj="22222222222"),
             _make_unit_record(unidade="02", bloco="A", nome="Carol", cpf_cnpj="33333333333"),
         ]
-        sync_data("87", "expresso", units, [], db)
+        debts = [
+            _make_debt_record(unidade="A 01", nome_pagador="Alice", doc="DOC-A"),
+            _make_debt_record(unidade="B 01", nome_pagador="Bob", doc="DOC-B"),
+            _make_debt_record(unidade="A 02", nome_pagador="Carol", doc="DOC-C"),
+        ]
+        sync_data("87", "expresso", units, debts, db)
 
         all_units = db.query(Unit).order_by(Unit.owner_name).all()
         assert len(all_units) == 3
@@ -186,19 +233,20 @@ class TestSyncDataWithBlock:
     def test_debt_sync_does_not_overwrite_formatted_name(self, db: Session) -> None:
         """
         O sync de dívidas NÃO deve sobrescrever o unit_name formatado.
-        A unidade já existe com 'Bloco A - 01', o sync de debt
-        encontra pelo nome do pagador e apenas insere o débito.
+        A unidade já existe com 'Bloco A - 01'; um novo ciclo de sync (só
+        com dívidas, unidades já sincronizadas antes) não deve reformatá-la.
         """
-        # Primeiro: sync units com bloco
+        # Primeiro: sync units + debt (unit precisa de dívida para ser persistida)
         units = [_make_unit_record(unidade="01", bloco="A", nome="João Silva")]
-        sync_data("87", "expresso", units, [], db)
+        debts = [_make_debt_record(unidade="A 01", nome_pagador="João Silva")]
+        sync_data("87", "expresso", units, debts, db)
 
         unit = db.query(Unit).first()
         assert unit.unit_name == "Bloco A - 01"
 
-        # Segundo: sync debts (o debt vem do Almah com unidade simplificada)
-        debts = [_make_debt_record(unidade="A 01", nome_pagador="João Silva")]
-        sync_data("87", "expresso", [], debts, db)
+        # Segundo: só chega o feed de dívidas (unit já existe, é só um novo débito)
+        debts_v2 = [_make_debt_record(unidade="A 01", nome_pagador="João Silva", doc="DOC-002")]
+        sync_data("87", "expresso", [], debts_v2, db)
 
         db.refresh(unit)
         # O nome formatado deve permanecer intacto
@@ -229,13 +277,15 @@ class TestSyncDataWithBlock:
         quando o nome atual ainda é um número puro.
         """
         units = [_make_unit_record(unidade="03", bloco=None, nome="Katicilani")]
-        sync_data("87", "expresso", units, [], db)
+        debts_v1 = [_make_debt_record(unidade="03", nome_pagador="Katicilani", doc="DOC-001")]
+        sync_data("87", "expresso", units, debts_v1, db)
 
         unit = db.query(Unit).first()
         assert unit.unit_name == "03"
 
-        debts = [_make_debt_record(unidade="B 03", nome_pagador="Katicilani")]
-        sync_data("87", "expresso", [], debts, db)
+        # Ciclo seguinte: a Almah já reporta a unidade com o bloco embutido
+        debts_v2 = [_make_debt_record(unidade="B 03", nome_pagador="Katicilani", doc="DOC-002")]
+        sync_data("87", "expresso", [], debts_v2, db)
 
         db.refresh(unit)
         assert unit.unit_name == "B 03"
@@ -247,12 +297,13 @@ class TestSyncDataWithBlock:
         string mais crua do boleto (ex: "A 01").
         """
         units = [_make_unit_record(unidade="01", bloco="A", nome="João Silva")]
-        sync_data("87", "expresso", units, [], db)
+        debts = [_make_debt_record(unidade="A 01", nome_pagador="João Silva")]
+        sync_data("87", "expresso", units, debts, db)
         unit = db.query(Unit).first()
         assert unit.unit_name == "Bloco A - 01"
 
-        debts = [_make_debt_record(unidade="A 01", nome_pagador="João Silva")]
-        sync_data("87", "expresso", [], debts, db)
+        debts_v2 = [_make_debt_record(unidade="A 01", nome_pagador="João Silva", doc="DOC-002")]
+        sync_data("87", "expresso", [], debts_v2, db)
 
         db.refresh(unit)
         assert unit.unit_name == "Bloco A - 01"
@@ -260,10 +311,11 @@ class TestSyncDataWithBlock:
     def test_debt_leaves_single_block_condo_untouched(self, db: Session) -> None:
         """Condomínio sem blocos: dívida também traz número puro, nada muda."""
         units = [_make_unit_record(unidade="03", bloco=None, nome="Bob")]
-        sync_data("205", "alpha", units, [], db)
+        debts_v1 = [_make_debt_record(unidade="03", nome_pagador="Bob", doc="DOC-001")]
+        sync_data("205", "alpha", units, debts_v1, db)
 
-        debts = [_make_debt_record(unidade="03", nome_pagador="Bob")]
-        sync_data("205", "alpha", [], debts, db)
+        debts_v2 = [_make_debt_record(unidade="03", nome_pagador="Bob", doc="DOC-002")]
+        sync_data("205", "alpha", [], debts_v2, db)
 
         unit = db.query(Unit).first()
         assert unit.unit_name == "03"
@@ -277,7 +329,11 @@ class TestSyncDataWithBlock:
             _make_unit_record(unidade="A - 101", bloco="A", nome="Marilza"),
             _make_unit_record(unidade="B - 003", bloco="B", nome="Carlos", cpf_cnpj="22222222222"),
         ]
-        sync_data("164", "alpha", units, [], db)
+        debts = [
+            _make_debt_record(unidade="A - 101", nome_pagador="Marilza", doc="DOC-M"),
+            _make_debt_record(unidade="B - 003", nome_pagador="Carlos", doc="DOC-C"),
+        ]
+        sync_data("164", "alpha", units, debts, db)
 
         all_units = db.query(Unit).order_by(Unit.owner_name).all()
         assert len(all_units) == 2
