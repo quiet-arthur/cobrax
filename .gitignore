@@ -15,3 +15,5 @@ cobrax.db
 data/
 *.csv
 *.xlsx
+# Instruções locais do Claude Code
+CLAUDE.md
