@@ -79,3 +79,14 @@ EVOLUTION_CONFIG = {
 }
 
 # ===========================
+
+# ====== WHATSAPP CLOUD API (Meta oficial) ======
+# Token: usuário de sistema do Business Manager (não usar token temporário de 24h).
+
+CLOUD_API_CONFIG = {
+    "access_token":    os.getenv("WHATSAPP_ACCESS_TOKEN", ""),
+    "phone_number_id": os.getenv("WHATSAPP_PHONE_NUMBER_ID", ""),
+    "api_version":     os.getenv("WHATSAPP_API_VERSION", "v23.0"),
+}
+
+# ===========================
