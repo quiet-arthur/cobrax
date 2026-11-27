@@ -1,5 +1,6 @@
 # Segurança (NUNCA remover esta linha)
 .env
+docs
 
 # Ambiente Virtual e Python
 .venv/
@@ -15,5 +16,11 @@ cobrax.db
 data/
 *.csv
 *.xlsx
+# Instruções locais do Claude Code
+CLAUDE.md
+
+# Artefatos de teste
+.coverage
+
 # Relatórios exportados da Almah (dados pessoais)
 *.pdf

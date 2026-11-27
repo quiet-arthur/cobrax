@@ -1,0 +1,29 @@
+# Roda a suíte de testes a cada push e pull request.
+# Nenhum segredo é necessário: os testes usam SQLite em memória e mocks de HTTP.
+name: Testes
+
+on:
+  push:
+    branches: [main, "feat/**", "fix/**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Instala o uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Instala as dependências (versões travadas no uv.lock)
+        run: uv sync --locked
+
+      - name: Roda os testes com cobertura
+        run: uv run pytest tests/ --cov=src --cov-report=term-missing
