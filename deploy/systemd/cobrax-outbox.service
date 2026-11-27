@@ -1,0 +1,21 @@
+# Envia as mensagens pendentes do outbox. Disparado pelo cobrax-outbox.timer.
+# Sai com código 1 em erro de autenticação → aparece em `systemctl --failed`.
+[Unit]
+Description=Cobrax - envio do outbox (WhatsApp Cloud API)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=cobrax
+Group=cobrax
+WorkingDirectory=/opt/cobrax
+ExecStart=/opt/cobrax/.venv/bin/python -m src.main --send-outbox
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/cobrax/data
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true

@@ -1,0 +1,26 @@
+# Receptor do webhook da WhatsApp Cloud API.
+# Escuta só em 127.0.0.1: o acesso externo passa pelo Caddy (HTTPS).
+[Unit]
+Description=Cobrax - webhook da WhatsApp Cloud API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=cobrax
+Group=cobrax
+WorkingDirectory=/opt/cobrax
+ExecStart=/opt/cobrax/.venv/bin/uvicorn src.api.app:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1 --no-server-header
+Restart=on-failure
+RestartSec=5
+
+# Endurecimento: o processo só escreve em data/ (banco SQLite)
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/cobrax/data
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

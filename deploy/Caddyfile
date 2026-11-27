@@ -1,0 +1,18 @@
+# Caddy obtém e renova o certificado HTTPS sozinho (Let's Encrypt).
+# Só /webhook e /health são expostos; o resto responde 404.
+api.laeltonrenato.com.br {
+	request_body {
+		max_size 1MB
+	}
+
+	@app path /webhook /health
+	handle @app {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	handle {
+		respond 404
+	}
+
+	log
+}
