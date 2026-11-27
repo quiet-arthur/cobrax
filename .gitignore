@@ -1,5 +1,6 @@
 # Segurança (NUNCA remover esta linha)
 .env
+docs
 
 # Ambiente Virtual e Python
 .venv/
