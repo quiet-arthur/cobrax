@@ -35,6 +35,7 @@ class CloudSendResult:
     message_id: str | None = field(default=None)   # wamid.* — chave para casar com webhooks
     error: str | None = field(default=None)
     error_code: int | None = field(default=None)   # código de erro da Graph API (ex: 131047)
+    status_code: int | None = field(default=None)  # HTTP status da resposta (None = sem resposta, ex: timeout)
 
 
 class CloudAPIClient:
@@ -191,7 +192,10 @@ class CloudAPIClient:
             message, code = _parse_graph_error(e.response)
             msg = f"HTTP {e.response.status_code} (código {code}): {message}"
             logger.error(f"[CloudAPI] Falha ao enviar para {phone}: {msg}")
-            return CloudSendResult(success=False, phone=phone, error=msg, error_code=code)
+            return CloudSendResult(
+                success=False, phone=phone, error=msg, error_code=code,
+                status_code=e.response.status_code,
+            )
         except httpx.TimeoutException:
             logger.error(f"[CloudAPI] Timeout ao enviar para {phone}")
             return CloudSendResult(success=False, phone=phone, error="Timeout na requisição")
