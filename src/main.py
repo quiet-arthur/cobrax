@@ -12,6 +12,8 @@ Flags:
   --condo <id>   : Filtra sincronização E notificações para um condomínio
   --dry-run      : Simula notificações (sem envio real)
   --notify       : Envia notificações de verdade
+  --send-outbox  : Só envia as mensagens pendentes do outbox (Cloud API), sem
+                   sincronizar. É o que o agendador do servidor executa.
   (sem flags)    : Sincroniza dados apenas, sem notificações
 """
 
@@ -24,11 +26,18 @@ from operator import itemgetter
 from sqlalchemy.orm import Session
 
 from src.adapters.almah_scraper import AlmahSession
+from src.adapters.cloud_api_client import CloudAPIClient
 from src.adapters.evolution_client import EvolutionAPIClient
-from src.config.settings import EVOLUTION_CONFIG
+from src.config.settings import CLOUD_API_CONFIG, EVOLUTION_CONFIG
 from src.repositories.database import Base, SessionLocal, engine
 from src.services.notifier import NotificationService
+from src.services.outbox_sender import OutboxSender, SendSummary
 from src.services.processor import sync_data
+
+# Lotes por execução de --send-outbox: limita quanto uma execução pode enviar
+# (50 × 20 = 1000 mensagens), para um bug num produtor não disparar sem freio.
+OUTBOX_BATCH_SIZE: int = 50
+OUTBOX_MAX_BATCHES: int = 20
 
 
 def load_condominios(filepath: str = "src/config/condominios.json") -> list[dict]:
@@ -127,12 +136,66 @@ def run_notifications(
     logging.info(f"=== Notificações encerradas | Resultado: {stats} ===")
 
 
+def run_outbox(
+    db: Session,
+    sender: OutboxSender,
+    *,
+    batch_size: int = OUTBOX_BATCH_SIZE,
+    max_batches: int = OUTBOX_MAX_BATCHES,
+) -> SendSummary:
+    """
+    Esvazia o outbox em lotes até não restar nada vencido, até uma falha de
+    autenticação interromper o envio, ou até atingir `max_batches`.
+
+    Returns:
+        Totais somados de todos os lotes.
+    """
+    total = SendSummary()
+    for _ in range(max_batches):
+        batch = sender.process_due(db, limit=batch_size)
+        total.sent += batch.sent
+        total.retried += batch.retried
+        total.failed += batch.failed
+        total.recovered += batch.recovered
+        if batch.halted:
+            total.halted, total.halt_reason = True, batch.halt_reason
+            break
+        if batch.sent + batch.retried + batch.failed < batch_size:
+            break  # lote incompleto: a fila acabou
+    else:
+        logging.warning(
+            f"[Outbox] Limite de {max_batches} lotes atingido; o restante sai na próxima execução."
+        )
+    return total
+
+
+def send_outbox(db: Session) -> bool:
+    """Envia o outbox pela Cloud API. Retorna False em erro de configuração/autenticação."""
+    if not CLOUD_API_CONFIG["access_token"] or not CLOUD_API_CONFIG["phone_number_id"]:
+        logging.error("WHATSAPP_ACCESS_TOKEN e WHATSAPP_PHONE_NUMBER_ID precisam estar no .env.")
+        return False
+    with CloudAPIClient(
+        CLOUD_API_CONFIG["access_token"],
+        CLOUD_API_CONFIG["phone_number_id"],
+        api_version=CLOUD_API_CONFIG["api_version"],
+    ) as client:
+        summary = run_outbox(db, OutboxSender(client))
+    logging.info(f"=== Outbox encerrado | {summary} ===")
+    return not summary.halted
+
+
 def main() -> None:
     """Ponto de entrada principal do Cobrax."""
     # Init DB
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
+    if "--send-outbox" in sys.argv:
+        ok = send_outbox(db)
+        db.close()
+        # Código de saída ≠ 0 aparece como falha no systemd/cron do servidor
+        sys.exit(0 if ok else 1)
 
     condos = load_condominios()
     if not condos:
