@@ -115,3 +115,48 @@ def test_fluxo_completo_status_e_clique(client, db):
 
 def test_health(client):
     assert client.get("/health").json() == {"status": "ok"}
+
+
+# --- Redação do verify token nos logs -----------------------------------------
+
+def test_redact_query_secrets_cobre_as_duas_formas_do_parametro():
+    from src.api.app import redact_query_secrets
+
+    path = ("/webhook?hub.mode=subscribe&hub.verify_token=SEGREDO&hub.challenge=123"
+            "&hub_verify_token=SEGREDO&hub_challenge=123")
+    redacted = redact_query_secrets(path)
+
+    assert "SEGREDO" not in redacted
+    assert "hub.verify_token=***" in redacted
+    assert "hub_verify_token=***" in redacted
+    assert "hub.challenge=123" in redacted  # o resto da query continua legível
+
+
+def test_filtro_remove_token_do_log_de_acesso_do_uvicorn(engine):
+    import logging
+
+    from src.api.app import RedactSecretsFilter
+
+    create_app(WebhookConfig(app_secret="s", verify_token="t"), engine)
+    access_logger = logging.getLogger("uvicorn.access")
+    assert any(isinstance(f, RedactSecretsFilter) for f in access_logger.filters)
+
+    # Mesmo formato de registro que o uvicorn emite: args = (cliente, método, caminho, versão, status)
+    record = logging.LogRecord(
+        "uvicorn.access", logging.INFO, __file__, 0,
+        '%s - "%s %s HTTP/%s" %d', ("1.2.3.4:0", "GET", "/webhook?hub.verify_token=SEGREDO", "1.1", 200),
+        None,
+    )
+    assert RedactSecretsFilter().filter(record) is True
+    assert "SEGREDO" not in record.getMessage()
+
+
+def test_instalar_redacao_duas_vezes_nao_duplica_filtro(engine):
+    import logging
+
+    from src.api.app import RedactSecretsFilter, install_log_redaction
+
+    install_log_redaction()
+    install_log_redaction()
+    filtros = [f for f in logging.getLogger("uvicorn.access").filters if isinstance(f, RedactSecretsFilter)]
+    assert len(filtros) == 1

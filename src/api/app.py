@@ -20,6 +20,7 @@ Execução local:
 """
 import json
 import logging
+import re
 import secrets
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -36,6 +37,37 @@ from src.services.webhook_handler import ButtonHandler, WebhookHandler
 
 
 logger = logging.getLogger(__name__)
+
+# A Meta manda o verify token na query string do handshake (GET /webhook), nas
+# formas "hub.verify_token" e "hub_verify_token". Sem este filtro, o log de
+# acesso do uvicorn grava o segredo em texto puro no journald.
+_TOKEN_IN_QUERY = re.compile(r"(hub[._]verify_token=)[^&\s]*")
+
+
+def redact_query_secrets(text: str) -> str:
+    """Troca o valor do verify token por *** em qualquer texto de log."""
+    return _TOKEN_IN_QUERY.sub(r"\1***", text)
+
+
+class RedactSecretsFilter(logging.Filter):
+    """Filtro de logging que remove o verify token dos registros (ex: uvicorn.access)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.args:
+            args = record.args if isinstance(record.args, tuple) else (record.args,)
+            record.args = tuple(
+                redact_query_secrets(a) if isinstance(a, str) else a for a in args
+            )
+        if isinstance(record.msg, str):
+            record.msg = redact_query_secrets(record.msg)
+        return True
+
+
+def install_log_redaction() -> None:
+    """Instala o filtro no logger de acesso do uvicorn (idempotente)."""
+    access_logger = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, RedactSecretsFilter) for f in access_logger.filters):
+        access_logger.addFilter(RedactSecretsFilter())
 
 
 @dataclass(frozen=True)
@@ -56,6 +88,7 @@ def create_app(
     if not config.verify_token:
         logger.error("[Webhook] WHATSAPP_VERIFY_TOKEN vazio: o handshake da Meta vai falhar.")
 
+    install_log_redaction()
     session_factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     handler = WebhookHandler(button_handlers)
 
