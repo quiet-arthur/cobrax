@@ -127,3 +127,37 @@ class OutboxMessage(Base):
     delivered_at = Column(DateTime, nullable=True)
     read_at = Column(DateTime, nullable=True)
     failed_at = Column(DateTime, nullable=True)
+
+
+class InboundMessage(Base):
+    """
+    Mensagem recebida de um contato pelo webhook da Cloud API.
+
+    Serve para três coisas:
+      - auditoria (o que o contato respondeu e quando);
+      - janela de 24h: texto livre só pode ser enviado até 24h depois da
+        última mensagem do contato (ver last_inbound_at no repositório);
+      - cliques em botões de template: `context_wamid` é o wamid da mensagem
+        que enviamos, então `outbox_message_id` liga o clique ao aviso que o
+        originou (ex: "Ver detalhes" de um resumo de audiências).
+
+    A Meta reentrega webhooks em caso de falha/timeout: `wamid` é único para
+    que uma reentrega não duplique a linha.
+    """
+    __tablename__ = "inbound_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    wamid = Column(String, unique=True, nullable=False, index=True)
+    sender = Column(String, nullable=False, index=True)     # wa_id do contato, ex: 5567999999999
+    sender_name = Column(String, nullable=True)             # nome do perfil no WhatsApp
+    kind = Column(String, nullable=False)                   # "text" | "button" | "interactive" | ...
+    text = Column(Text, nullable=True)                      # corpo do texto ou rótulo do botão
+    button_payload = Column(String, nullable=True)          # payload/id do botão clicado
+
+    # Resposta a uma mensagem nossa (cliques em botões sempre trazem isso)
+    context_wamid = Column(String, nullable=True, index=True)
+    outbox_message_id = Column(Integer, ForeignKey("outbox_messages.id"), nullable=True)
+
+    sent_at = Column(DateTime, nullable=False)              # timestamp informado pela Meta
+    received_at = Column(DateTime, nullable=False)          # quando o webhook chegou aqui
+    handled_at = Column(DateTime, nullable=True)            # quando um handler tratou o clique

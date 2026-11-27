@@ -87,6 +87,10 @@ CLOUD_API_CONFIG = {
     "access_token":    os.getenv("WHATSAPP_ACCESS_TOKEN", ""),
     "phone_number_id": os.getenv("WHATSAPP_PHONE_NUMBER_ID", ""),
     "api_version":     os.getenv("WHATSAPP_API_VERSION", "v23.0"),
+    # Webhook: App Secret (Painel do app → Configurações → Básico) assina cada POST
+    # da Meta; o verify token é uma senha qualquer, a mesma cadastrada na Meta.
+    "app_secret":      os.getenv("WHATSAPP_APP_SECRET", ""),
+    "verify_token":    os.getenv("WHATSAPP_VERIFY_TOKEN", ""),
 }
 
 # ===========================
