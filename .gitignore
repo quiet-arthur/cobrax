@@ -21,3 +21,6 @@ CLAUDE.md
 
 # Artefatos de teste
 .coverage
+
+# Relatórios exportados da Almah (dados pessoais)
+*.pdf
