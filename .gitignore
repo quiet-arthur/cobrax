@@ -15,3 +15,5 @@ cobrax.db
 data/
 *.csv
 *.xlsx
+# Relatórios exportados da Almah (dados pessoais)
+*.pdf
